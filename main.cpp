@@ -5,217 +5,212 @@
 using namespace std;
 using namespace cv;
 
-void canny(const Mat src, Mat& result, int besarKernel, double delta, int thresMax, int thresMin);
-void follow(Mat nonmax, Mat &result, int x, int y, int thresMin);
-void gaussianKernelGenerator(Mat &resultX, Mat &resultY, Mat &result, int besarKernel, double delta);
+void canny(const Mat src, Mat& result, int thresMax, int thresMin, Mat kernelX, Mat kernelY);
+void follow(Mat nonmax, Mat &result, int x, int y, int thresMin, int thresMax);
+void gaussianKernelDerivativeGenerator(Mat &resultX, Mat &resultY, int besarKernel, double delta);
 void rgb2gray(const Mat src, Mat &result);
 
 int main(int argc, char *argv[])
 {
     Mat src = imread("D:\\Project\\C++\\CitraDigital\\shapes.png");
 
-    rgb2gray(src, src);
-
-    Mat edge;
-
-    canny(src, edge, 5, 1.2, 127, 63);
-
-    namedWindow("asli");
-    imshow("asli", src);
+    VideoCapture cap(1);
+    if (!cap.isOpened())
+    {
+        cout << "ga bisa buka video cam" << endl;
+        return -1;
+    }
 
     namedWindow("CannyEdgeDetector");
-    imshow("CannyEdgeDetector", edge);
 
-    waitKey(0);
+    //inisialisasi kernel
+    Mat dGx;
+    Mat dGy;
+    gaussianKernelDerivativeGenerator(dGx, dGy, 3, 0.6);
+    cout<<"dGx :"<<endl<<dGx<<endl<<endl;
+    cout<<"dGy :"<<endl<<dGy<<endl<<endl;
 
+    while(1){
+        if(cap.read(src)){
+            rgb2gray(src, src);
+
+            Mat edge;
+            namedWindow("asli");
+            imshow("asli", src);
+
+            canny(src, edge, 19, 6, dGx, dGy);
+
+
+
+
+            imshow("CannyEdgeDetector", edge);
+        }
+        if (waitKey(1) == 27)
+        {
+           break;
+        }
+    }
 }
 
-void canny(const Mat src, Mat& result, int besarKernel, double delta, int thresMax, int thresMin)
+void canny(const Mat src, Mat& result, int thresMax, int thresMin, Mat kernelX, Mat kernelY)
 {
-    //inisialisasi kernel
-    Mat kernelX;
-    Mat kernelY;
-    Mat kernelGu;
-    gaussianKernelGenerator( kernelX, kernelY, kernelGu, besarKernel, delta);
+    int centerKernel = kernelX.cols / 2;
+    int cols = src.cols;
+    int rows = src.rows;
 
-    int filterOffset = besarKernel / 2;
+    Mat mmagnitude =  (Mat(src.rows, src.cols,CV_64FC1, Scalar(0)));
 
-    Mat mgu =  (Mat_<double>(src.rows - filterOffset * 2, src.cols - filterOffset*2));
-    Mat mmagnitude =  (Mat_<double>(mgu.rows - filterOffset * 2, mgu.cols - filterOffset*2));
+    Mat direction =  (Mat(src.rows, src.cols,CV_64FC1, Scalar(0)));
 
-    Mat mdgux =  (Mat_<double>(mgu.rows - filterOffset * 2, mgu.cols - filterOffset*2));
-    Mat mdguy =  (Mat_<double>(mgu.rows - filterOffset * 2, mgu.cols - filterOffset*2));
-    Mat dir =  (Mat_<uchar>(mgu.rows - filterOffset * 2, mgu.cols - filterOffset*2));
 
-    Mat nonmax = Mat::zeros(mgu.rows - filterOffset*2, mgu.cols - filterOffset*2, src.type());
+    Mat nonmax  =  (Mat(src.rows, src.cols,CV_8UC1, Scalar(0)));
 
-    result = Mat::zeros(mgu.rows - filterOffset*2, mgu.cols - filterOffset*2, src.type());
+    result = Mat(src.rows, src.cols,CV_8UC1, Scalar(0));
 
-    double sX;
-    double sY;
-    double sg;
-    double magnitude;
+    double sX, sY;
 
-    //smooth image with gaussian filter
-    for(int ysrc = filterOffset; ysrc < src.rows - filterOffset; ++ysrc){
-        for(int xsrc = filterOffset; xsrc < src.cols - filterOffset; ++xsrc){
-            sg = 0;
-            for(int xkernel = -filterOffset; xkernel <= filterOffset; ++xkernel){
-                for(int ykernel = -filterOffset; ykernel <= filterOffset; ++ykernel){
-                    sg += src.at<uchar>(ysrc + ykernel, xsrc + xkernel) * kernelGu.at<double>(filterOffset + ykernel, filterOffset + xkernel);
-                }
-            }
-            mgu.at<double>(ysrc - filterOffset, xsrc - filterOffset) = sg;
-        }
-    }
+    int ii, jj;
 
-    double direction;
 
     //compute derivative of filter image
-    for(int ysrc = filterOffset; ysrc < mgu.rows - filterOffset; ++ysrc){
-        for(int xsrc = filterOffset; xsrc < mgu.cols - filterOffset; ++xsrc){
 
+    for(int i = 0; i < cols; ++i){
+        for(int j = 0; j < rows; ++j){
             sX = 0;
             sY = 0;
-            for(int xkernel = -filterOffset; xkernel <= filterOffset; ++xkernel){
-                for(int ykernel = -filterOffset; ykernel <= filterOffset; ++ykernel){
-                    sX += mgu.at<double>(ysrc + ykernel, xsrc + xkernel) * kernelX.at<double>(filterOffset + ykernel, filterOffset + xkernel);
-                    sY += mgu.at<double>(ysrc + ykernel, xsrc + xkernel) * kernelY.at<double>(filterOffset + ykernel, filterOffset + xkernel);
+
+            for(int ik = -centerKernel; ik <= centerKernel; ++ik ){
+                ii = i + ik;
+                for(int jk = -centerKernel; jk <= centerKernel; ++jk ){
+                    jj = j + jk;
+
+                    if(ii >= 0 && ii < cols && jj >= 0 && jj < rows){
+                        sX += src.at<uchar>(jj, ii) * kernelX.at<double>(centerKernel + jk, centerKernel + ik);
+                        sY += src.at<uchar>(jj, ii) * kernelY.at<double>(centerKernel + jk, centerKernel + ik);
+                    }
                 }
             }
 
-            mdgux.at<double>(ysrc - filterOffset, xsrc - filterOffset) = sX;
-            mdguy.at<double>(ysrc - filterOffset, xsrc - filterOffset) = sY;
-
-            direction = (atan2(sX,sY)/M_PI) * 180.0;		// Calculate actual direction of edge
-
-            if ( ( (direction < 22.5) && (direction > -22.5) ) || (direction > 157.5) || (direction < -157.5) )
-                direction = 0;
-            if ( ( (direction > 22.5) && (direction < 67.5) ) || ( (direction < -112.5) && (direction > -157.5) ) )
-                direction = 45;
-            if ( ( (direction > 67.5) && (direction < 112.5) ) || ( (direction < -67.5) && (direction > -112.5) ) )
-                direction = 90;
-            if ( ( (direction > 112.5) && (direction < 157.5) ) || ( (direction < -22.5) && (direction > -67.5) ) )
-                direction = 135;
-
-            dir.at<uchar>(ysrc - filterOffset, xsrc - filterOffset) = direction;
-
-            magnitude = sqrt(pow(sX, 2) + pow(sY, 2));
-
-
-
-            mmagnitude.at<double>(ysrc - filterOffset, xsrc - filterOffset) = magnitude;
-
-
+            direction.at<double>(j, i) = (atan2(sX, sY)/M_PI) * 180.0;
+            mmagnitude.at<double>(j, i) = sqrt(pow(sX, 2) + pow(sY, 2));
         }
     }
 
-    for(int y = 1; y < mmagnitude.rows - 1; ++y){
-        for(int x = 1; x < mmagnitude.cols - 1; ++x){
+    for(int y = 1; y < rows - 1; ++y){
+        for(int x = 1; x < cols - 1; ++x){
 
             //non-maximal suppression
-            switch(dir.at<uchar>(y, x)){
-                case 0 :
-                    if(mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y + 1,x) && mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y - 1, x)){
-                        nonmax.at<uchar>(y,x) = (mmagnitude.at<double>(y,x) <= 255)? mmagnitude.at<double>(y,x) : 255;
-                    }else{
-                        nonmax.at<uchar>(y,x) = 0;
+
+
+            if ( ( (direction.at<double>(y, x) < 22.5) && (direction.at<double>(y, x) > -22.5) ) || (direction.at<double>(y, x) > 157.5) || (direction.at<double>(y, x) < -157.5) ){
+                if(mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y + 1,x) && mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y - 1, x)){
+                    if(mmagnitude.at<double>(y,x) > thresMax){
+                        result.at<uchar>(y,x) = 255;
                     }
-                    break;
-                case 45 :
-                    if(mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y + 1,x + 1) && mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y - 1,x  - 1)){
-                        nonmax.at<uchar>(y,x) = (mmagnitude.at<double>(y,x) <= 255)? mmagnitude.at<double>(y,x) : 255;
-                    }else{
-                        nonmax.at<uchar>(y,x) = 0;
+
+                    else if(mmagnitude.at<double>(y,x) <= thresMax && mmagnitude.at<double>(y,x) > thresMin){
+                        nonmax.at<uchar>(y,x) = mmagnitude.at<double>(y,x);
                     }
-                    break;
-                case 90 :
-                    if(mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y,x - 1) && mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y,x  + 1)){
-                        nonmax.at<uchar>(y,x) = (mmagnitude.at<double>(y,x) <= 255)? mmagnitude.at<double>(y,x) : 255;
-                    }else{
-                        nonmax.at<uchar>(y,x) = 0;
-                    }
-                    break;
-                case 135 :
-                    if(mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y + 1,x - 1) && mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y - 1,x  + 1)){
-                        nonmax.at<uchar>(y,x) = (mmagnitude.at<double>(y,x) <= 255)? mmagnitude.at<double>(y,x) : 255;
-                    }else{
-                        nonmax.at<uchar>(y,x) = 0;
-                    }
-                    break;
+                }
             }
+            if ( ( (direction.at<double>(y, x) > 22.5) && (direction.at<double>(y, x) < 67.5) ) || ( (direction.at<double>(y, x) < -112.5) && (direction.at<double>(y, x) > -157.5) ) ){
+                if(mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y + 1,x + 1) && mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y - 1,x  - 1)){
+                    if(mmagnitude.at<double>(y,x) > thresMax){
+                        result.at<uchar>(y,x) = 255;
+                    }
 
+                    else if(mmagnitude.at<double>(y,x) <= thresMax && mmagnitude.at<double>(y,x) > thresMin){
+                        nonmax.at<uchar>(y,x) = mmagnitude.at<double>(y,x);
+                    }
+                }
+            }
+            if ( ( (direction.at<double>(y, x) > 67.5) && (direction.at<double>(y, x) < 112.5) ) || ( (direction.at<double>(y, x) < -67.5) && (direction.at<double>(y, x) > -112.5) ) ){
+                if(mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y,x - 1) && mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y,x  + 1)){
+                    if(mmagnitude.at<double>(y,x) > thresMax){
+                        result.at<uchar>(y,x) = 255;
+                    }
 
+                    else if(mmagnitude.at<double>(y,x) <= thresMax && mmagnitude.at<double>(y,x) > thresMin){
+                        nonmax.at<uchar>(y,x) = mmagnitude.at<double>(y,x);
+                    }
+                }
+            }
+            if ( ( (direction.at<double>(y, x) > 112.5) && (direction.at<double>(y, x) < 157.5) ) || ( (direction.at<double>(y, x) < -22.5) && (direction.at<double>(y, x) > -67.5) ) ){
+                if(mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y + 1,x - 1) && mmagnitude.at<double>(y,x) > mmagnitude.at<double>(y - 1,x  + 1)){
 
+                    if(mmagnitude.at<double>(y,x) > thresMax){
+                        result.at<uchar>(y,x) = 255;
+                    }
+
+                    else if(mmagnitude.at<double>(y,x) <= thresMax && mmagnitude.at<double>(y,x) > thresMin){
+                        nonmax.at<uchar>(y,x) = mmagnitude.at<double>(y,x);
+                    }
+                }
+            }
         }
     }
 
     //hysteria threshold
-    for(int y = 1; y < mmagnitude.rows - 1; ++y){
-        for(int x = 1; x < mmagnitude.cols - 1; ++x){
-            if(nonmax.at<uchar>(y,x) > thresMax && result.at<uchar>(y,x) < thresMin){
-                follow(nonmax, result, x, y, thresMin);
+    for(int y = 1; y < rows - 1; ++y){
+        for(int x = 1; x < cols - 1; ++x){
+            if(result.at<uchar>(y,x) == 255){
+                follow(nonmax, result, x, y, thresMin, thresMax);
             }
         }
     }
-
 }
 
-void follow(Mat nonmax, Mat &result, int x, int y, int thresMin)
-{
-    result.at<uchar>(y,x) = nonmax.at<uchar>(y,x);
 
-    if( result.at<uchar>(y + 1,x + 1) < thresMin &&  nonmax.at<uchar>(y + 1,x + 1) > thresMin){
-        follow(nonmax, result, x + 1, y + 1, thresMin);
+void follow(Mat nonmax, Mat &result, int x, int y, int thresMin, int thresMax)
+{
+    result.at<uchar>(y,x) = 255;
+
+    if( result.at<uchar>(y + 1,x + 1) == 0 &&  nonmax.at<uchar>(y + 1,x + 1) > thresMin && nonmax.at<uchar>(y + 1,x + 1) <= thresMax){
+        follow(nonmax, result, x + 1, y + 1, thresMin, thresMax);
     }
-    if( result.at<uchar>(y - 1,x - 1) < thresMin &&  nonmax.at<uchar>(y - 1,x - 1) > thresMin){
-        follow(nonmax, result, x - 1, y - 1, thresMin);
+    if( result.at<uchar>(y - 1,x - 1) == 0 &&  nonmax.at<uchar>(y - 1,x - 1) > thresMin && nonmax.at<uchar>(y + 1,x + 1) <= thresMax){
+        follow(nonmax, result, x - 1, y - 1, thresMin, thresMax);
     }
-    if( result.at<uchar>(y, x - 1) < thresMin &&  nonmax.at<uchar>(y,x - 1) > thresMin){
-        follow(nonmax, result, x - 1, y, thresMin);
+    if( result.at<uchar>(y, x - 1) == 0 &&  nonmax.at<uchar>(y,x - 1) > thresMin && nonmax.at<uchar>(y + 1,x + 1) <= thresMax){
+        follow(nonmax, result, x - 1, y, thresMin, thresMax);
     }
-    if( result.at<uchar>(y, x + 1) < thresMin &&  nonmax.at<uchar>(y,x + 1) > thresMin){
-        follow(nonmax, result, x + 1, y, thresMin);
+    if( result.at<uchar>(y, x + 1) == 0 &&  nonmax.at<uchar>(y,x + 1) > thresMin && nonmax.at<uchar>(y + 1,x + 1) <= thresMax){
+        follow(nonmax, result, x + 1, y, thresMin, thresMax);
     }
-    if( result.at<uchar>(y - 1, x) < thresMin &&  nonmax.at<uchar>(y - 1,x) > thresMin){
-        follow(nonmax, result, x, y - 1, thresMin);
+    if( result.at<uchar>(y - 1, x) == 0 &&  nonmax.at<uchar>(y - 1,x) > thresMin && nonmax.at<uchar>(y + 1,x + 1) <= thresMax){
+        follow(nonmax, result, x, y - 1, thresMin, thresMax);
     }
-    if( result.at<uchar>(y + 1, x) < thresMin &&  nonmax.at<uchar>(y + 1,x) > thresMin){
-        follow(nonmax, result, x, y + 1, thresMin);
+    if( result.at<uchar>(y + 1, x) == 0 &&  nonmax.at<uchar>(y + 1,x) > thresMin && nonmax.at<uchar>(y + 1,x + 1) <= thresMax){
+        follow(nonmax, result, x, y + 1, thresMin, thresMax);
     }
-    if( result.at<uchar>(y + 1, x - 1) < thresMin &&  nonmax.at<uchar>(y + 1, x - 1) > thresMin){
-        follow(nonmax, result, x - 1, y + 1, thresMin);
+    if( result.at<uchar>(y + 1, x - 1) == 0 &&  nonmax.at<uchar>(y + 1, x - 1) > thresMin && nonmax.at<uchar>(y + 1,x + 1) <= thresMax){
+        follow(nonmax, result, x - 1, y + 1, thresMin, thresMax);
     }
-    if( result.at<uchar>(y - 1, x + 1) < thresMin &&  nonmax.at<uchar>(y - 1, x + 1) > thresMin){
-        follow(nonmax, result, x + 1, y - 1, thresMin);
+    if( result.at<uchar>(y - 1, x + 1) == 0 &&  nonmax.at<uchar>(y - 1, x + 1) > thresMin && nonmax.at<uchar>(y + 1,x + 1) <= thresMax){
+        follow(nonmax, result, x + 1, y - 1, thresMin, thresMax);
     }
 }
 
 //Gaussian
-void gaussianKernelGenerator(Mat &resultX, Mat &resultY, Mat &result, int besarKernel, double delta)
+void gaussianKernelDerivativeGenerator(Mat &resultX, Mat &resultY, int besarKernel, double delta)
 {
     int kernelRadius = besarKernel / 2;
     resultX = Mat_<double>(besarKernel, besarKernel);
     resultY = Mat_<double>(besarKernel, besarKernel);
-    result  = Mat_<double>(besarKernel, besarKernel);
 
-    double pengali = -1 / ( sqrt(2 * (22 / 7) ) * pow(delta, 3) ) ;
-    double pengaliGu =  1 / (  sqrt(2 * (22 / 7)) * delta ) ;
+    double pengali = -1 / ( 2 * (22 / 7) * pow(delta, 4) ) ;
 
     for(int filterX = - kernelRadius; filterX <= kernelRadius; filterX++){
         for(int filterY = - kernelRadius; filterY <= kernelRadius; filterY++){
 
             resultX.at<double>(filterY + kernelRadius, filterX + kernelRadius) =
-                    exp(-( ( pow(filterX, 2)  ) / ( pow(delta, 2) * 2) ))
-                    * pengali *filterX;
+                    exp(-( ( pow(filterX, 2) + pow(filterY, 2)  ) / ( pow(delta, 2) * 2) ))
+                    * pengali * filterX;
 
             resultY.at<double>(filterY + kernelRadius, filterX + kernelRadius) =
-                    exp(-( ( pow(filterY, 2)  ) / ( pow(delta, 2) * 2) ))
+                    exp(-( ( pow(filterX, 2) + pow(filterY, 2) ) / ( pow(delta, 2) * 2) ))
                     * pengali * filterY;
 
-            result.at<double>(filterY + kernelRadius, filterX + kernelRadius) =
-                    exp(-( ( pow(filterY, 2)  ) / ( pow(delta, 2) * 2) ))
-                    * pengaliGu;
         }
 
     }
